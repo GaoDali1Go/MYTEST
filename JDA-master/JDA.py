@@ -71,6 +71,5 @@ def JDA(Xs, Xt, Ys, Yt0, options):
         Z = np.matmul(A.T, K)
 
     print('Algorithm JDA terminated!!!\n\n')
-    print('hello world！')
 
     return Z, A

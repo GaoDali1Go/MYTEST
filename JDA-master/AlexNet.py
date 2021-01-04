@@ -177,16 +177,16 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # Training settings
 batch_size = 100
-iteration = 200000
+iteration = 60000
 lr = 0.0001
 momentum = 0.9
 no_cuda = False
 seed = 8
 log_interval = 10
 l2_decay = 5e-4
-root_path = r"C:\Users\Gao_D\Desktop\博士工作\科研-迁移学习\数据"
+root_path = r"D:\博士工作\故障诊断方向\高炉数据"
 src_name = r"\10.23-26图像"
-tgt_name = r"\11.6图像"
+tgt_name = r"\\11.3-6图像"
 
 cuda = not no_cuda and torch.cuda.is_available()
 
@@ -240,19 +240,23 @@ def train(model):
         src_pred, mmd_loss = model(src_data, tgt_data)
         cls_loss = F.nll_loss(F.log_softmax(src_pred, dim=1), src_label)
         lambd = 2 / (1 + math.exp(-10 * (i) / iteration)) - 1
-        loss = cls_loss + 15 * lambd * mmd_loss
+        loss = cls_loss + lambd * mmd_loss
         loss.backward()
         optimizer.step()
-        if i % log_interval == 0:
-            print('Train iter: {} [({:.0f}%)]\tLoss: {:.6f}\tsoft_Loss: {:.6f}\tmmd_Loss: {:.6f}'.format(
-                i, 100. * i / iteration, loss.item(), cls_loss.item(), mmd_loss.item()))
-
-        if i % (log_interval * 20) == 0:
-            t_correct = test(model)
-            if t_correct > correct:
-                correct = t_correct
-            print('src: {} to tgt: {} max correct: {} max accuracy{: .2f}%\n'.format(
-                src_name, tgt_name, correct, 100. * correct / tgt_dataset_len))
+        # if i % log_interval == 0:
+        print('Train iter: {} [({:.0f}%)]\tLoss: {:.6f}\tsoft_Loss: {:.6f}\tmmd_Loss: {:.6f}'.format(
+            i, 100. * i / iteration, loss.item(), cls_loss.item(), mmd_loss.item()))
+        res_loss.append(loss.item())
+        res_softmax_loss.append(cls_loss.item())
+        res_mmd_loss.append(mmd_loss.item())
+        # if i % (log_interval * 20) == 0:
+        t_correct = test(model)
+        if t_correct > correct:
+            correct = t_correct
+            model_dict = model.state_dict()
+            torch.save(model.state_dict(),'./model_state_dict_max.pt')
+        print('src: {} to tgt: {} max correct: {} max accuracy{: .2f}%\n'.format(
+            src_name, tgt_name, correct, 100. * correct / tgt_dataset_len))
 
 
 def test(model):
@@ -270,11 +274,13 @@ def test(model):
                                     reduction='sum').item()  # sum up batch loss
             pred = tgt_pred.data.max(1)[1]  # get the index of the max log-probability
             correct += pred.eq(tgt_test_label.data.view_as(pred)).cpu().sum()
-
+    correct = correct.cpu().numpy().tolist()
     test_loss /= tgt_dataset_len
     print('\n{} set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
         tgt_name, test_loss, correct, tgt_dataset_len,
         100. * correct / tgt_dataset_len))
+    res_test_loss.append(test_loss)
+    res_test.append(100. * correct / tgt_dataset_len)
     return correct
 
 
@@ -288,13 +294,21 @@ if __name__ == '__main__':
     model.load_state_dict(model_dict)
     for m in model.classifier:
         if isinstance(m, nn.Linear):
-            m.weight.data.normal_(mean=0,std=0.2)
-            m.bias.data.normal_(mean=0, std=0.2)
-    model.gategory.weight.data.normal_(mean=0,std=0.2)  # 全连接层参数初始化
-    model.gategory.bias.data.normal_(mean=0, std=0.2)
+            m.weight.data.normal_(mean=0,std=0.1)
+            m.bias.data.normal_(mean=0, std=0.1)
+    model.gategory.weight.data.normal_(mean=0,std=0.1)  # 全连接层参数初始化
+    model.gategory.bias.data.normal_(mean=0, std=0.1)
     model_dict = model.state_dict()
     model.load_state_dict(model_dict)
     print(model)
+    res_loss = []
+    res_softmax_loss = []
+    res_mmd_loss = []
+    res_test = []
+    res_test_loss = []
     if cuda:
         model.cuda()
     train(model)
+    torch.save(model.state_dict(), './model_state_dict_end.pt')
+    print(res_loss, res_softmax_loss, res_mmd_loss)
+    print('max:',model_dict,"end:",model.state_dict())

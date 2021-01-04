@@ -1,9 +1,20 @@
+from __future__ import print_function
 from torch.utils.data import DataLoader, Dataset
 import os
 from PIL import Image
 import torch
 import torchvision.transforms as transforms
 import warnings
+import argparse
+import torch
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.autograd import Variable
+import os
+import math
+import torch
+import torch.nn as nn
+from torchvision.models import alexnet
 from torchvision import models
 import pandas as pd
 import numpy as np
@@ -26,8 +37,8 @@ class MyDataset(Dataset):  # 继承Dataset
         # 根据目录名称获取图像标签（0 正常 1 难行 2 管道）
         label = img_path.split('\\')[-1].split('.')[0]
         label = int(label.split('_')[1])
-        if label > 0:
-            label = 1
+        # if label > 0:
+        #     label = 1
         if self.transform is not None:
             img = self.transform(img)
         return img, label
@@ -92,18 +103,9 @@ def mmd_rbf_noaccelerate(source, target, kernel_mul=2.0, kernel_num=5, fix_sigma
 
 # """调用写好的Alexnet"""
 
-import torch
-import torch.nn as nn
-from torchvision.models import alexnet
-
-alex = alexnet(pretrained=True)
-# print(alex)
-# print(alex.state_dict().keys())
-pretrained_dict = alex.state_dict()
-weight_0 = pretrained_dict['features.3.weight']
-bias_0 = pretrained_dict['features.3.bias']
-print(weight_0.shape)
-print(bias_0.shape)
+# import torch
+# import torch.nn as nn
+# from torchvision.models import alexnet
 
 
 class alex_net(nn.Module):
@@ -157,37 +159,34 @@ class alex_net(nn.Module):
 
         return source, loss
 
-
-model = alex_net(num_classes=2)
-print(model.state_dict().keys())
 # print(model)
 
 # "进行训练"
-from __future__ import print_function
-import argparse
-import torch
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.autograd import Variable
-import os
-import math
-from torch.utils import model_zoo
+# from __future__ import print_function
+# import argparse
+# import torch
+# import torch.nn.functional as F
+# import torch.optim as optim
+# from torch.autograd import Variable
+# import os
+# import math
+# from torch.utils import model_zoo
 
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # Training settings
-batch_size = 64
-iteration = 20000
-lr = 0.001
+batch_size = 100
+iteration = 200000
+lr = 0.0001
 momentum = 0.9
 no_cuda = False
 seed = 8
 log_interval = 10
 l2_decay = 5e-4
-root_path = r"D:\博士工作\故障诊断方向\高炉数据"
+root_path = r"C:\Users\Gao_D\Desktop\博士工作\科研-迁移学习\数据"
 src_name = r"\10.23-26图像"
-tgt_name = r"\11.3-6图像"
+tgt_name = r"\11.6图像"
 
 cuda = not no_cuda and torch.cuda.is_available()
 
@@ -220,7 +219,7 @@ def train(model):
             {'params': model.features.parameters()},
             {'params': model.classifier.parameters(), 'lr': LEARNING_RATE},
             {'params': model.gategory.parameters(), 'lr': LEARNING_RATE},
-        ], lr=LEARNING_RATE / 2, momentum=momentum, weight_decay=l2_decay)
+        ], lr=LEARNING_RATE / 10, momentum=momentum, weight_decay=l2_decay)
         try:
             src_data, src_label = src_iter.next()
         except Exception as err:
@@ -241,7 +240,7 @@ def train(model):
         src_pred, mmd_loss = model(src_data, tgt_data)
         cls_loss = F.nll_loss(F.log_softmax(src_pred, dim=1), src_label)
         lambd = 2 / (1 + math.exp(-10 * (i) / iteration)) - 1
-        loss = cls_loss + lambd * mmd_loss
+        loss = cls_loss + 15 * lambd * mmd_loss
         loss.backward()
         optimizer.step()
         if i % log_interval == 0:
@@ -280,7 +279,21 @@ def test(model):
 
 
 if __name__ == '__main__':
-    model = alex_net(num_classes=2)
+    model = alex_net(num_classes=3)
+    model_dict = model.state_dict()
+    pretrained_model = alexnet(pretrained=True)
+    pretrained_dict = pretrained_model.state_dict()
+    pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+    model_dict.update(pretrained_dict)
+    model.load_state_dict(model_dict)
+    for m in model.classifier:
+        if isinstance(m, nn.Linear):
+            m.weight.data.normal_(mean=0,std=0.2)
+            m.bias.data.normal_(mean=0, std=0.2)
+    model.gategory.weight.data.normal_(mean=0,std=0.2)  # 全连接层参数初始化
+    model.gategory.bias.data.normal_(mean=0, std=0.2)
+    model_dict = model.state_dict()
+    model.load_state_dict(model_dict)
     print(model)
     if cuda:
         model.cuda()
